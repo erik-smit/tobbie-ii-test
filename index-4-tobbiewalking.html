@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<!--
+Copyright 2021 Google Inc. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tobbie II Sample</title>
+  </head>
+  <body>
+    <script>
+      var ChromeSamples = {
+        log: function () {
+          var line = Array.prototype.slice
+            .call(arguments)
+            .map(function (argument) {
+              return typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument);
+            })
+            .join(" ");
+
+          document.querySelector("#log").textContent += line + "\n";
+        },
+
+        clearLog: function () {
+          document.querySelector("#log").textContent = "";
+        },
+
+        setStatus: function (status) {
+          document.querySelector("#status").textContent = status;
+        },
+
+        setContent: function (newContent) {
+          var content = document.querySelector("#content");
+          while (content.hasChildNodes()) {
+            content.removeChild(content.lastChild);
+          }
+          content.appendChild(newContent);
+        },
+      };
+    </script>
+
+    <form id="connect">
+      <button>Go-time</button>
+    </form>
+    <form id="led">
+      <button>Do LED Matrix</button>
+    </form>
+    <form id="walkstop">
+      <button>stop walking</button>
+    </form>
+
+    <h3>Live Output</h3>
+    <div id="output" class="output">
+      <div id="content"></div>
+      <div id="status"></div>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      // globals
+      let buttonCharacteristic;
+      let ioPinDataCharacteristic;
+      let ioPinPWMCharacteristic;
+      let ledMatrixCharacteristic;
+
+      // global gamepad object
+      let gamepadIndex;
+      window.addEventListener("gamepadconnected", (event) => {
+        gamepadIndex = event.gamepad.index;
+      });
+
+      async function connectButtonPressed() {
+        try {
+          const buttonServiceUUID = "e95d9882-251d-470a-a062-fa1922dfa9a8";
+          const buttonAStateUUID = "e95dda90-251d-470a-a062-fa1922dfa9a8";
+          const buttonABtateUUID = "e95dda91-251d-470a-a062-fa1922dfa9a8";
+
+          const ioPinServiceUUID = "e95d127b-251d-470a-a062-fa1922dfa9a8";
+          const ioPinDataUUID    = "e95d8d00-251d-470a-a062-fa1922dfa9a8";
+          const ioPinPWMUUID     = "e95dd822-251d-470a-a062-fa1922dfa9a8";
+
+          const ledServiceUUID = "e95dd91d-251d-470a-a062-fa1922dfa9a8";
+          const ledMatrixUUID = "e95d7b77-251d-470a-a062-fa1922dfa9a8";
+
+          log("Requesting Bluetooth Device...");
+          uBitDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ namePrefix: "BBC micro:bit" }],
+            optionalServices: [
+              buttonServiceUUID,
+              ioPinServiceUUID,
+              ledServiceUUID,
+            ],
+          });
+
+          log("Connected to " + uBitDevice.name);
+
+          log("Connecting to GATT Server...");
+          const server = await uBitDevice.gatt.connect();
+
+          // button things
+          log("Button things...");
+          const buttonService = await server.getPrimaryService(
+            buttonServiceUUID
+          );
+
+          buttonCharacteristic = await buttonService.getCharacteristic(
+            buttonAStateUUID
+          );
+
+          // led things
+          log("led things...");
+          const ledService = await server.getPrimaryService(ledServiceUUID);
+
+          ledMatrixCharacteristic = await ledService.getCharacteristic(
+            ledMatrixUUID
+          );
+
+          // iopin things
+          log("iopin things...");
+          const ioPinService = await server.getPrimaryService(ioPinServiceUUID);
+
+          ioPinDataCharacteristic = await ioPinService.getCharacteristic(ioPinDataUUID);
+          ioPinPWMCharacteristic = await ioPinService.getCharacteristic(ioPinPWMUUID);
+        } catch (error) {
+          log(error);
+        }
+      }
+
+      async function ledButtonPressed() {
+        const ledMatrixView = new DataView(new ArrayBuffer(5));
+        ledMatrixView.setUint8(0, 255);
+        await ledMatrixCharacteristic.writeValue(ledMatrixView);
+      }
+
+      async function ioPinSet(pin, data) {
+        const ioPinDataView = new DataView(new ArrayBuffer(2));
+        ioPinDataView.setUint8(0, pin);
+        ioPinDataView.setUint8(1, data);
+        await ioPinDataCharacteristic.writeValue(ioPinDataView);
+      }
+
+      async function ioPinPWMSet(pin, value, period = 1000) {
+        const littleEndian = true;
+        
+        const ioPinPWMView = new DataView(new ArrayBuffer(7));
+        ioPinPWMView.setUint8(0, pin);
+        ioPinPWMView.setUint16(1, value, littleEndian);
+        ioPinPWMView.setUint32(3, period, littleEndian);
+        await ioPinPWMCharacteristic.writeValue(ioPinPWMView);
+      }
+
+      async function ioPinPWMSetDuo(pin, value, period = 1000, pin2, value2, period2 = 1000) {
+        const littleEndian = true;
+        
+        const ioPinPWMView = new DataView(new ArrayBuffer(14));
+        ioPinPWMView.setUint8(0, pin);
+        ioPinPWMView.setUint16(1, value, littleEndian);
+        ioPinPWMView.setUint32(3, period, littleEndian);
+        ioPinPWMView.setUint8(7, pin2);
+        ioPinPWMView.setUint16(8, value2, littleEndian);
+        ioPinPWMView.setUint32(10, period2, littleEndian);
+        await ioPinPWMCharacteristic.writeValue(ioPinPWMView);
+      }
+
+
+      // from https://gist.github.com/xposedbones/75ebaef3c10060a3ee3b246166caab56#gistcomment-2951694
+      const map = (value, x1, y1, x2, y2) =>
+        ((value - x1) * (y2 - x2)) / (y1 - x1) + x2;
+
+      async function tobbieWalk(speed) {
+        // deadzone
+        if (speed < 0.1 && speed > -0.1) {
+          await ioPinPWMSet(13, 0);
+          await ioPinPWMSet(14, 0);
+        } else if (speed >= 0) {
+          await ioPinPWMSet(13, speed * 1024);
+          await ioPinPWMSet(14, 0);
+        } else {
+          await ioPinPWMSet(13, 0);
+          await ioPinPWMSet(14, Math.abs(speed) * 1024);
+        }
+      }
+
+      async function tobbieTurn(speed) {
+        // deadzone
+        if (speed < 0.1 && speed > -0.1) {
+          await ioPinPWMSet(15, 0);
+          await ioPinPWMSet(16, 0);
+        } else if (speed >= 0) {
+          await ioPinPWMSet(15, speed * 1024);
+          await ioPinPWMSet(16, 0);
+        } else {
+          await ioPinPWMSet(15, 0);
+          await ioPinPWMSet(16, Math.abs(speed) * 1024);
+        }
+      }
+
+      async function walkStopButtonPressed(data) {
+        await ioPinSet(13, 0);
+        await ioPinSet(14, 0);
+      }
+
+      function disconnectButtonPressed() {
+        if (!uBitDevice) {
+          return;
+        }
+
+        if (uBitDevice.gatt.connected) {
+          uBitDevice.gatt.disconnect();
+          log("Disconnected");
+        }
+      }
+
+      setInterval(() => {
+        if (gamepadIndex !== undefined) {
+          // a gamepad is connected and has an index
+          const myGamepad = navigator.getGamepads()[gamepadIndex];
+          let leftY = myGamepad.axes[1];
+          let rightX = myGamepad.axes[2];
+
+          tobbieSpeed = 0 - leftY;
+          tobbieWalk(tobbieSpeed);
+          tobbieTurn(rightX);
+        }
+      }, 100); // print axes 10 times per second
+    </script>
+
+    <script>
+      document
+        .querySelector("form#connect")
+        .addEventListener("submit", function (event) {
+          event.stopPropagation();
+          event.preventDefault();
+
+          if (isWebBluetoothEnabled()) {
+            ChromeSamples.clearLog();
+            connectButtonPressed();
+          }
+        });
+      document
+        .querySelector("form#led")
+        .addEventListener("submit", function (event) {
+          event.stopPropagation();
+          event.preventDefault();
+          ledButtonPressed();
+        });
+      document
+        .querySelector("form#walkstop")
+        .addEventListener("submit", function (event) {
+          event.stopPropagation();
+          event.preventDefault();
+          walkStopButtonPressed();
+        });
+    </script>
+
+    <script>
+      log = ChromeSamples.log;
+      //log = console.log;
+
+      function isWebBluetoothEnabled() {
+        if (navigator.bluetooth) {
+          return true;
+        } else {
+          ChromeSamples.setStatus(
+            "Web Bluetooth API is not available.\n" +
+              'Please make sure the "Experimental Web Platform features" flag is enabled.'
+          );
+          return false;
+        }
+      }
+    </script>
+  </body>
+</html>
