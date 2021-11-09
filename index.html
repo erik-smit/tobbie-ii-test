@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tobbie II Sample</title>
+  </head>
+  <body>
+    <script>
+      var ChromeSamples = {
+        log: function () {
+          var line = Array.prototype.slice
+            .call(arguments)
+            .map(function (argument) {
+              return typeof argument === "string"
+                ? argument
+                : JSON.stringify(argument);
+            })
+            .join(" ");
+
+          document.querySelector("#log").textContent += line + "\n";
+        },
+
+        clearLog: function () {
+          document.querySelector("#log").textContent = "";
+        },
+
+        setStatus: function (status) {
+          document.querySelector("#status").textContent = status;
+        },
+
+        setContent: function (newContent) {
+          var content = document.querySelector("#content");
+          while (content.hasChildNodes()) {
+            content.removeChild(content.lastChild);
+          }
+          content.appendChild(newContent);
+        },
+      };
+    </script>
+
+    <form id="connect">
+      <button>Connect to Tobbie II</button>
+    </form>
+
+    <h3>Gamepad</h3>
+    <div>
+      <div><span>connected: </span><span id="connected">no</span></div>
+      <div><span>walkSpeed: </span><span id="walkSpeed"></span></div>
+      <div><span>turnSpeed: </span><span id="turnSpeed"></span></div>
+    </div>
+    <h3>Live Output</h3>
+    <div id="output" class="output">
+      <div id="content"></div>
+      <div id="status"></div>
+      <pre id="log"></pre>
+    </div>
+
+    <script>
+      // globals
+      let UARTRxCharacteristic;
+
+      // global gamepad object
+      let gamepadIndex;
+      window.addEventListener("gamepadconnected", (event) => {
+        gamepadIndex = event.gamepad.index;
+      });
+
+      async function connectButtonPressed() {
+        try {
+          const UARTServiceUUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+          const UARTTXUUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+          const UARTRXUUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+
+          log("Requesting Bluetooth Device...");
+          uBitDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ namePrefix: "BBC micro:bit" }],
+            optionalServices: [ UARTServiceUUID ],
+          });
+
+          log("Connected to " + uBitDevice.name);
+
+          log("Connecting to GATT Server...");
+          const server = await uBitDevice.gatt.connect();
+
+          // UART things
+          log("UART things...");
+          const UARTService = await server.getPrimaryService(UARTServiceUUID);
+          UARTRxCharacteristic = await UARTService.getCharacteristic(
+            UARTRXUUID
+          );
+
+          document.querySelector("#connected").innerHTML = "yes";
+        } catch (error) {
+          log(`Error: ${error}`);
+        }
+      }
+
+      async function UARTTx(data) {
+        if (!UARTRxCharacteristic) {
+          return;
+        }
+        var enc = new TextEncoder();
+        const dataencode = enc.encode(data);
+        await UARTRxCharacteristic.writeValue(dataencode);
+      }
+
+      setTimeout(() => {
+        pollGamepad();
+      });
+
+      // wrap in closure to remember previous arguments for comparison
+      const tobbieMove = function () {
+        let prevTobbieWalkSpeed;
+        let prevTobbieTurnSpeed;
+
+        return async function (tobbieWalkSpeed, tobbieTurnSpeed) {
+          // avoid resending if no change
+          if (prevTobbieWalkSpeed == tobbieWalkSpeed && prevTobbieTurnSpeed == tobbieTurnSpeed) {
+            return
+          }
+
+          document.querySelector("#walkSpeed").innerHTML = tobbieWalkSpeed;
+          document.querySelector("#turnSpeed").innerHTML = tobbieTurnSpeed;
+
+          await UARTTx(`${tobbieWalkSpeed},${tobbieTurnSpeed}` + "\n");
+        }
+      }();
+      
+      async function pollGamepad() {
+        if (gamepadIndex !== undefined) {
+          // a gamepad is connected and has an index
+          const myGamepad = navigator.getGamepads()[gamepadIndex];
+          let leftY = myGamepad.axes[1];
+          let rightX = myGamepad.axes[2];
+
+          // -1 is forward, 1 is backward
+          tobbieWalkSpeed = 0 - leftY;
+          // normalize to 0-100%
+          tobbieWalkSpeed = Math.round(tobbieWalkSpeed * 100);
+          tobbieWalkSpeed =
+            Math.abs(tobbieWalkSpeed) < 10 ? 0 : tobbieWalkSpeed;
+
+          // ???
+          tobbieTurnSpeed = 0 - rightX;
+          tobbieTurnSpeed = Math.round(tobbieTurnSpeed * 100);
+          tobbieTurnSpeed =
+            Math.abs(tobbieTurnSpeed) < 10 ? 0 : tobbieTurnSpeed;
+          
+          await tobbieMove(tobbieWalkSpeed, tobbieTurnSpeed);
+        }
+        setTimeout(() => {
+          pollGamepad();
+        }, 100);
+      }
+    </script>
+
+    <script>
+      document
+        .querySelector("form#connect")
+        .addEventListener("submit", function (event) {
+          event.stopPropagation();
+          event.preventDefault();
+
+          if (isWebBluetoothEnabled()) {
+            ChromeSamples.clearLog();
+            connectButtonPressed();
+          }
+        });
+    </script>
+
+    <script>
+      log = ChromeSamples.log;
+      //log = console.log;
+
+      function isWebBluetoothEnabled() {
+        if (navigator.bluetooth) {
+          return true;
+        } else {
+          ChromeSamples.setStatus(
+            "Web Bluetooth API is not available.\n" +
+              'Please make sure the "Experimental Web Platform features" flag is enabled.'
+          );
+          return false;
+        }
+      }
+    </script>
+  </body>
+</html>
