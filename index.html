@@ -47,6 +47,7 @@
       <div><span>connected: </span><span id="connected">no</span></div>
       <div><span>walkSpeed: </span><span id="walkSpeed"></span></div>
       <div><span>turnSpeed: </span><span id="turnSpeed"></span></div>
+      <div><form id="textForm"><span>Text:</span><span><input id="textField" type="text"></span><span><button>Send</button></span> </div></form>
     </div>
     <h3>Live Output</h3>
     <div id="output" class="output">
@@ -119,13 +120,15 @@
             return
           }
 
+          prevTobbieWalkSpeed = tobbieWalkSpeed;
+          prevTobbieTurnSpeed = tobbieTurnSpeed;
           document.querySelector("#walkSpeed").innerHTML = tobbieWalkSpeed;
           document.querySelector("#turnSpeed").innerHTML = tobbieTurnSpeed;
 
-          await UARTTx(`${tobbieWalkSpeed},${tobbieTurnSpeed}` + "\n");
+          await UARTTx(`S,${tobbieWalkSpeed},${tobbieTurnSpeed}` + "\n");
         }
       }();
-      
+
       async function pollGamepad() {
         if (gamepadIndex !== undefined) {
           // a gamepad is connected and has an index
@@ -166,6 +169,27 @@
             connectButtonPressed();
           }
         });
+
+      document
+        .querySelector("form#textForm")
+        .addEventListener("submit", function (event) {
+          event.stopPropagation();
+          event.preventDefault();
+
+          if (isWebBluetoothEnabled()) {
+            ChromeSamples.clearLog();
+            textButtonPressed();
+          }
+        });
+
+      function textButtonPressed() {
+        tobbieText(document.querySelector("input#textField").value);
+      }
+
+      async function tobbieText(text) {
+        await UARTTx(`T,${text}` + "\n");
+      }
+
     </script>
 
     <script>
